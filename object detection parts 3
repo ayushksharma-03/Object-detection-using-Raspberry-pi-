@@ -1,0 +1,55 @@
+import cv2
+from picamera2 import Picamera2
+import time
+
+# Load class labels from COCO dataset used by MobileNet SSD
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+           "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+           "dog", "horse", "motorbike", "person", "pottedplant",
+           "sheep", "sofa", "train", "tvmonitor"]
+
+# Load the pre-trained model
+net = cv2.dnn.readNetFromCaffe("deploy.prototxt", "MobileNetSSD_deploy.caffemodel")
+
+# Initialize PiCamera
+picam2 = Picamera2()
+picam2.preview_configuration.main.size = (640, 480)
+picam2.preview_configuration.main.format = "RGB888"
+picam2.configure("preview")
+picam2.start()
+time.sleep(1)  # Allow camera to warm up
+
+while True:
+    frame = picam2.capture_array()
+    h, w = frame.shape[:2]
+
+    # Prepare image for model
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)),
+                                 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
+
+    # Process detections
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+
+        if confidence > 0.5:
+            idx = int(detections[0, 0, i, 1])
+            label = CLASSES[idx]
+            box = detections[0, 0, i, 3:7] * [w, h, w, h]
+            (startX, startY, endX, endY) = box.astype("int")
+
+            cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 255, 0), 2)
+            cv2.putText(frame, f"{label}: {confidence:.2f}",
+                        (startX, startY - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5, (0, 255, 0), 2)
+
+    cv2.imshow("Object Detection", frame)
+
+    # Exit on pressing 'q'
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Cleanup
+cv2.destroyAllWindows()
+picam2.close()
