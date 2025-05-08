@@ -2,3 +2,4 @@ wget https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNet
 wget https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel
 wget https://github.com/weiliu89/caffe/raw/ssd/models/VGGNet/VOC0712/SSD_300x300/deploy.caffemodel -O MobileNetSSD_deploy.caffemodel
 wget https://github.com/chahat090/ObjectDetectionRaspberryPi/raw/main/MobileNetSSD_deploy.caffemodel
+scp MobileNetSSD_deploy.caffemodel pi@raspberrypi.local:/home/pi/object-detection/
