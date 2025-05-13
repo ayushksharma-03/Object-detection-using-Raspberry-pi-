@@ -1,0 +1,52 @@
+import cv2
+import numpy as np
+from picamera2 import Picamera2
+
+# Load class labels from coco.names
+with open("coco.names", "r") as f:
+    class_names = f.read().strip().split("\n")
+
+# Load model
+net = cv2.dnn.readNetFromCaffe("MobileNetSSD_deploy.prototxt", "MobileNetSSD_deploy.caffemodel")
+
+# Define colors for bounding boxes
+colors = np.random.uniform(0, 255, size=(len(class_names), 3))
+
+# Initialize Pi Camera
+picam2 = Picamera2()
+picam2.preview_configuration.main.size = (640, 480)
+picam2.preview_configuration.main.format = "RGB888"
+picam2.configure("preview")
+picam2.start()
+
+while True:
+    frame = picam2.capture_array()
+    h, w = frame.shape[:2]
+
+    # Convert frame to blob for DNN
+    blob = cv2.dnn.blobFromImage(frame, 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
+
+    # Process detections
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.5:
+            class_id = int(detections[0, 0, i, 1])
+            class_name = class_names[class_id] if class_id < len(class_names) else "Unknown"
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (x1, y1, x2, y2) = box.astype("int")
+            
+            color = colors[class_id]
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            label = f"{class_name}: {int(confidence * 100)}%"
+            cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    # Show output
+    cv2.imshow("COCO Object Detection", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cv2.destroyAllWindows()
+picam2.close()
