@@ -1,0 +1,83 @@
+# Import required libraries
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load Haar Cascade Classifiers
+face_cascade = cv2.CascadeClassifier("/content/haarcascade_frontalface_default.xml")
+eye_cascade = cv2.CascadeClassifier("/content/haarcascade_eye.xml")
+
+# Function to detect faces
+def adjusted_detect_face(img):
+    face_img = img.copy()
+    gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
+    face_rect = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5)
+
+    for (x, y, w, h) in face_rect:
+        cv2.rectangle(face_img, (x, y), (x + w, y + h), (255, 255, 255), 10)
+
+    return face_img
+
+# Function to detect eyes
+def detect_eyes(img):
+    eye_img = img.copy()
+    gray = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
+    eye_rect = eye_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5)
+
+    for (x, y, w, h) in eye_rect:
+        cv2.rectangle(eye_img, (x, y), (x + w, y + h), (255, 255, 255), 10)
+
+    return eye_img
+
+# Function to detect faces and label them with names
+def adjusted_detect_face_with_names(img, names=[]):
+    face_img = img.copy()
+    gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
+    face_rect = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5)
+
+    # Sort faces left to right by x coordinate
+    face_rect = sorted(face_rect, key=lambda x: x[0])
+
+    for idx, (x, y, w, h) in enumerate(face_rect):
+        cv2.rectangle(face_img, (x, y), (x + w, y + h), (255, 255, 255), 5)
+        if idx < len(names):
+            cv2.putText(face_img, names[idx], (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+    return face_img
+
+# Load the image
+img = cv2.imread("/content/andrew.jpg")
+img_copy1 = img.copy()
+img_copy2 = img.copy()
+img_copy3 = img.copy()
+
+# Display original image
+plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+plt.title("Original Image")
+plt.axis('off')
+plt.show()
+
+# Face Detection
+face = adjusted_detect_face(img_copy1)
+plt.imshow(cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
+plt.title("Face Detection")
+plt.axis('off')
+plt.show()
+cv2.imwrite('face.jpg', face)
+
+# Eyes Detection
+eyes = detect_eyes(img_copy2)
+plt.imshow(cv2.cvtColor(eyes, cv2.COLOR_BGR2RGB))
+plt.title("Eyes Detection")
+plt.axis('off')
+plt.show()
+cv2.imwrite('eyes.jpg', eyes)
+
+# Face Detection with Name Labels (for 3 people)
+person_names = ["Alice", "Bob", "Charlie"]
+img_with_names = adjusted_detect_face_with_names(img_copy3, person_names)
+plt.imshow(cv2.cvtColor(img_with_names, cv2.COLOR_BGR2RGB))
+plt.title("Face Detection with Names")
+plt.axis('off')
+plt.show()
+cv2.imwrite('face_with_names.jpg', img_with_names)
