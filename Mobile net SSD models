@@ -1,1 +1,3 @@
 https://github.com/chuanqi305/MobileNet-SSD/blob/master/deploy.prototxt
+--
+https://github.com/chuanqi305/MobileNet-SSD/blob/master/mobilenet_iter_73000.caffemodel
