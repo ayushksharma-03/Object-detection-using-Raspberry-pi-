@@ -1,0 +1,59 @@
+import cv2
+import numpy as np
+from picamera2 import Picamera2
+
+# Load the pre-trained MobileNet SSD model
+net = cv2.dnn.readNetFromCaffe("mobilenet_ssd.prototxt", "mobilenet_ssd.caffemodel")
+
+# List of object classes MobileNet SSD can detect
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+           "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+           "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+           "sofa", "train", "tvmonitor"]
+
+# Initialize the Pi Camera
+picam2 = Picamera2()
+picam2.preview_configuration.main.size = (640, 480)
+picam2.preview_configuration.main.format = "RGB888"
+picam2.configure("preview")
+picam2.start()
+
+# Start the detection loop
+while True:
+    frame = picam2.capture_array()
+    h, w = frame.shape[:2]
+
+    # Convert image to blob format for the model
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)),
+                                 0.007843, (300, 300), 127.5)
+
+    # Pass blob through the network
+    net.setInput(blob)
+    detections = net.forward()
+
+    # Loop through detections
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+
+        if confidence > 0.5:
+            idx = int(detections[0, 0, i, 1])
+            label = CLASSES[idx]
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (x1, y1, x2, y2) = box.astype("int")
+
+            # Draw bounding box and label
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{label}: {confidence:.2f}",
+                        (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        (0, 255, 0), 2)
+
+    # Show the frame
+    cv2.imshow("Object Detection", frame)
+
+    # Break on pressing 'q'
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Cleanup
+cv2.destroyAllWindows()
+picam2.close()
