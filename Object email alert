@@ -1,0 +1,93 @@
+import cv2
+import numpy as np
+import time
+import smtplib
+from email.message import EmailMessage
+from picamera2 import Picamera2
+
+# Load MobileNet SSD model
+net = cv2.dnn.readNetFromCaffe("mobilenet_ssd.prototxt", "mobilenet_ssd.caffemodel")
+
+# COCO class labels
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+           "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+           "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+           "sofa", "train", "tvmonitor"]
+
+# Initialize PiCamera2
+picam2 = Picamera2()
+picam2.preview_configuration.main.size = (640, 480)
+picam2.preview_configuration.main.format = "RGB888"
+picam2.configure("preview")
+picam2.start()
+
+# Track persistent detection
+start_time = None
+alert_sent = False
+
+# Email credentials
+SENDER_EMAIL = "yourbot@gmail.com"
+APP_PASSWORD = "yourapppassword"
+RECEIVER_EMAIL = "youremail@gmail.com"
+
+def send_email(snapshot_path, label, confidence):
+    msg = EmailMessage()
+    msg["Subject"] = f"Alert: {label} detected ({confidence:.2f})"
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = RECEIVER_EMAIL
+    msg.set_content(f"A {label} was detected with confidence {confidence:.2f}.")
+
+    with open(snapshot_path, "rb") as f:
+        img_data = f.read()
+        msg.add_attachment(img_data, maintype="image", subtype="jpeg", filename="snapshot.jpg")
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(SENDER_EMAIL, APP_PASSWORD)
+        smtp.send_message(msg)
+        print("Email sent!")
+
+while True:
+    frame = picam2.capture_array()
+    h, w = frame.shape[:2]
+
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 
+                                 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
+
+    detected = False
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.5:
+            idx = int(detections[0, 0, i, 1])
+            label = CLASSES[idx]
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (x1, y1, x2, y2) = box.astype("int")
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{label}: {confidence:.2f}", 
+                        (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 
+                        0.5, (0, 255, 0), 2)
+            
+            if label == "person":
+                detected = True
+                if start_time is None:
+                    start_time = time.time()
+                elif time.time() - start_time >= 10 and not alert_sent:
+                    snapshot_path = "snapshot.jpg"
+                    cv2.imwrite(snapshot_path, frame)
+                    send_email(snapshot_path, label, confidence)
+                    alert_sent = True
+            break
+
+    if not detected:
+        start_time = None
+        alert_sent = False
+
+    cv2.imshow("Object Detection", frame)
+
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+cv2.destroyAllWindows()
+picam2.close()
