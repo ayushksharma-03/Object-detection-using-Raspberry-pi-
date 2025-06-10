@@ -1,0 +1,121 @@
+import cv2
+import numpy as np
+import os
+import smtplib
+import time
+import datetime
+from playsound import playsound
+from email.message import EmailMessage
+from picamera2 import Picamera2
+
+# Load pre-trained MobileNet SSD model
+net = cv2.dnn.readNetFromCaffe("mobilenet_ssd.prototxt", "mobilenet_ssd.caffemodel")
+
+# COCO class labels used in MobileNet SSD
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus",
+           "car", "cat", "chair", "cow", "diningtable", "dog", "horse",
+           "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
+
+# Email setup
+SENDER = "youremail@gmail.com"
+PASSWORD = "your_16_char_app_password"
+RECEIVER = "receiveremail@gmail.com"
+
+# Initialize camera
+picam2 = Picamera2()
+picam2.preview_configuration.main.size = (640, 480)
+picam2.preview_configuration.main.format = "RGB888"
+picam2.configure("preview")
+picam2.start()
+
+# Set up directory and log
+snapshot_dir = "snapshots"
+os.makedirs(snapshot_dir, exist_ok=True)
+log_file_path = "detection_log.txt"
+
+with open(log_file_path, "a") as f:
+    f.write(f"\n\nSession started at {datetime.datetime.now()}\n")
+
+last_alert_time = 0
+alert_time = 10  # seconds object must stay before alert
+detection_counter = 0
+start_time = None
+
+def send_email(snapshot_path):
+    msg = EmailMessage()
+    msg["Subject"] = "Object Alert"
+    msg["From"] = SENDER
+    msg["To"] = RECEIVER
+    msg.set_content("Object detected and alert triggered.")
+
+    with open(snapshot_path, "rb") as f:
+        file_data = f.read()
+        msg.add_attachment(file_data, maintype="image", subtype="jpeg", filename="snapshot.jpg")
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(SENDER, PASSWORD)
+        smtp.send_message(msg)
+
+def log_event(msg):
+    with open(log_file_path, "a") as f:
+        f.write(f"[{datetime.datetime.now()}] {msg}\n")
+
+while True:
+    frame = picam2.capture_array()
+    h, w = frame.shape[:2]
+
+    # Blob and prediction
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 0.007843, (300, 300), 127.5)
+    net.setInput(blob)
+    detections = net.forward()
+
+    detected = False
+    for i in range(detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+        if confidence > 0.5:
+            idx = int(detections[0, 0, i, 1])
+            label = CLASSES[idx]
+            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+            (x1, y1, x2, y2) = box.astype("int")
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{label}: {confidence:.2f}", (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            detected = True
+
+    # Timestamp and counter
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cv2.putText(frame, f"Time: {timestamp}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 255, 255), 1)
+    cv2.putText(frame, f"Detections: {detection_counter}", (10, 40), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 255, 255), 1)
+    cv2.putText(frame, f"Alert Time: {alert_time}s", (10, 60), cv2.FONT_HERSHEY_SIMPLEX,
+                0.5, (255, 255, 255), 1)
+
+    # Trigger if object remains for alert_time seconds
+    if detected:
+        if start_time is None:
+            start_time = time.time()
+        elif time.time() - start_time >= alert_time and time.time() - last_alert_time > alert_time:
+            snapshot_name = f"{snapshot_dir}/snapshot_{int(time.time())}.jpg"
+            cv2.imwrite(snapshot_name, frame)
+            send_email(snapshot_name)
+            playsound("/usr/share/sounds/alsa/Front_Center.wav")
+            detection_counter += 1
+            last_alert_time = time.time()
+            log_event(f"ALERT: {label} detected. Snapshot: {snapshot_name}")
+    else:
+        start_time = None
+
+    cv2.imshow("Object Detection with Alerts", frame)
+
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
+        break
+    elif key == ord('+'):
+        alert_time += 1
+    elif key == ord('-') and alert_time > 1:
+        alert_time -= 1
+
+cv2.destroyAllWindows()
+picam2.close()
